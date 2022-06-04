@@ -7,7 +7,7 @@
 
 
 GRATEmanager::GRATEmanager()
-  : sourceZ(0), sourceA(0), KinEn(-1.), SqrtSnn(-1.), XsectNN(-1.), lowLimitExEn( 0.), upperLimitExEn( 100.), binsExEn(1), eventsPerBin(1), StatisticsLabel(-1), iterations(1), wM(0), wP(0), NucleusInputLabel(0), IsCollider(0), upperLimitB(-1), CritDist(2.7), angle(0), DeExModel("")
+  : sourceZ(0), sourceA(0), KinEn(-1.), SqrtSnn(-1.), XsectNN(-1.), lowLimitExEn( 0.), upperLimitExEn( 100.), binsExEn(1), eventsPerBin(1), StatisticsLabel(-1), iterations(1), wM(0), wP(0), NucleusInputLabel(0), IsCollider(0), upperLimitB(-1), CritDist(2.7), angle(0), DeExModel(""), ClustModel("cut"), variation(-1), singleSilhouette(-10)
 {  
   std::cout << "######### Abrasion-Ablation model using Glauber Monte Carlo and Geant4" <<std::endl;
   while(!NucleusInputLabel){
@@ -106,6 +106,26 @@ GRATEmanager::GRATEmanager()
       std::cout<<"Choose a model for fragment deexcitation. G4, ABLAXX, AAMCC or MIX (random mix of G4, ABLAXX and AAMCC) options are available: ";
       std::cin>>DeExModel;
   }
+
+  while(true) {
+      std::cout << "Choose the prefragment clustering model. Cut(cut), silhouette optimisation(silhouette), alpha-particle count maximisation (max_alpha) and alpha-particle destruction (alpha_destroy) are available: ";
+      std::cin>>ClustModel;
+      if (ClustModel == "cut" || ClustModel == "silhouette" || ClustModel == "max_alpha" || ClustModel == "alpha_destroy")
+          break;
+  }
+
+  if (ClustModel != "cut")
+      while (variation < 0) {
+          std::cout<<"Please enter acceptable CritDist variation (in percent) : ";
+          std::cin >> variation;
+          variation /= 100;
+      }
+
+  if (ClustModel == "silhouette")
+      while (singleSilhouette < -1 || singleSilhouette > 1) {
+          std::cout<<"Please enter the silhouette of a single nucleon cluster (from -1 to 1) : ";
+          std::cin >> singleSilhouette;
+      }
 
   std::cout<<"Write coordinates of nucleons in the text file or not (one event)? (1 - yes, 0 - no): ";
   std::cin >> InFileOrNot;

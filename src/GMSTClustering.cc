@@ -17,13 +17,10 @@ GMSTClustering::GMSTClustering(){
 CritDist = 100;
 };
 
-GMSTClustering::GMSTClustering(G4double CD_in, G4double Aa_in, G4double Ab_in, G4double single_silh, G4double variation){
-    CritDist = CD_in;
-    SpecAa = Aa_in;
-    SpecAb = Ab_in;
-    this->variation = variation;
-    this->single_silh = single_silh;
+GMSTClustering::GMSTClustering(G4double CD_in, G4double variation, G4double single_silh) : CritDist(CD_in), variation(variation), single_silh(single_silh)
+{
 };
+
 
 GMSTClustering::~GMSTClustering() = default;
 
@@ -42,13 +39,11 @@ void GMSTClustering::SetUp(NucleonVector* nucleons_in, G4double ExA, G4double Ex
         if (nucleon->isParticipant == 0) {
             switch ("A" == nucleon->Nucl ? 0 : 1) {
                 case 0:
-                    SpecAa++;
                     nucleons.push_back(*nucleon);
                     if (nucleon->isospin == 1)
                         Z++;
                     break;
                 case 1:
-                    SpecAb++;
                     nucleons_B.push_back(*nucleon);
                     if (nucleon->isospin == 1)
                         Zb++;
@@ -109,7 +104,7 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(silhouette) {
 
     //get dendrograms for both nucleons
     GTree treeA = g.AdvancedKruskalMSTDendro();
-    GTree treeB = g.AdvancedKruskalMSTDendro();
+    GTree treeB = g_B.AdvancedKruskalMSTDendro();
 
     //get the clustering with the biggest applicable CD:
     std::vector<GNode> current = treeA.get_cluster(CritDistA * (1.0 + variation));
@@ -118,40 +113,41 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(silhouette) {
     std::vector<GNode> best = current;
     //calculate mean cluster silhouettes until min applicable CD
     //separate nucleon clusters are given silhouette of single_silh
-    while (current.front().height > CritDistA * (1.0 - (variation > 1 ? 1 : variation))) {
-        G4double silh = 0;
-        for (auto iter = current.cbegin(); iter != current.cend(); iter++) {
-            if (iter->size > 1)
-                for (G4int i = 0; i < iter->size; i++) {
-                    G4double inner = 0, outer = -1;
-                    for (G4int j = 0; j < iter->size; j++)
-                        inner += g.adj[iter->V[i] - 1][iter->V[j] - 1];
-                    inner /= (iter->size - 1);
-                    for (auto jter = current.cbegin(); jter != current.cend(); jter++)
-                        if (iter != jter) {
-                            G4double buff = 0;
-                            for (G4int j = 0; j < jter->size; j++)
-                                buff += g.adj[iter->V[i] - 1][jter->V[j] - 1];
-                            buff /= jter->size;
-                            if (outer < 0 || buff < outer)
-                                outer = buff;
-                        }
-                    silh += ((outer - inner) / max(outer, inner));
-                }
-            else
-                silh += single_silh;
+    if (!current.empty())
+        while (current.front().height > CritDistA * (1.0 - (variation > 1 ? 1 : variation))) {
+            G4double silh = 0;
+            for (auto iter = current.cbegin(); iter != current.cend(); iter++) {
+                if (iter->size > 1)
+                    for (G4int i = 0; i < iter->size; i++) {
+                        G4double inner = 0, outer = -1;
+                        for (G4int j = 0; j < iter->size; j++)
+                            inner += g.adj[iter->V[i] - 1][iter->V[j] - 1];
+                        inner /= (iter->size - 1);
+                        for (auto jter = current.cbegin(); jter != current.cend(); jter++)
+                            if (iter != jter) {
+                                G4double buff = 0;
+                                for (G4int j = 0; j < jter->size; j++)
+                                    buff += g.adj[iter->V[i] - 1][jter->V[j] - 1];
+                                buff /= jter->size;
+                                if (outer < 0 || buff < outer)
+                                    outer = buff;
+                            }
+                        silh += ((outer - inner) / max(outer, inner));
+                    }
+                else
+                    silh += single_silh;
+            }
+            silh /= SpecAa;
+            if (silh > max_silh) {
+                max_silh = silh;
+                best = current;
+            }
+            //divide the biggest cluster into two
+            current.push_back(*current.front().children.first);
+            current.push_back(*current.front().children.second);
+            current.erase(current.begin());
+            sort(current.begin(), current.end(), cd_comp);
         }
-        silh /= SpecAa;
-        if (silh > max_silh) {
-            max_silh = silh;
-            best = current;
-        }
-        //divide the biggest cluster into two
-        current.push_back(*current.front().children.first);
-        current.push_back(*current.front().children.second);
-        current.erase(current.begin());
-        sort(current.begin(), current.end(), cd_comp);
-    }
     //conversion to vector<vector<int>>
     for (const auto &iter: best)
         clusters_A.emplace_back(std::vector<G4int>(iter.V, iter.V + iter.size));
@@ -165,40 +161,41 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(silhouette) {
     best = current;
     //calculate mean cluster silhouettes until min applicable CD
     //separate nucleon clusters are given silhouette of single_silh
-    while (current.front().height > CritDist * (1.0 - (variation > 1 ? 1 : variation))) {
-        G4double silh = 0;
-        for (auto iter = current.cbegin(); iter != current.cend(); iter++) {
-            if (iter->size > 1)
-                for (G4int i = 0; i < iter->size; i++) {
-                    G4double inner = 0, outer = -1;
-                    for (G4int j = 0; j < iter->size; j++)
-                        inner += g.adj[iter->V[i] - 1][iter->V[j] - 1];
-                    inner /= (iter->size - 1);
-                    for (auto jter = current.cbegin(); jter != current.cend(); jter++)
-                        if (iter != jter) {
-                            G4double buff = 0;
-                            for (G4int j = 0; j < jter->size; j++)
-                                buff += g.adj[iter->V[i] - 1][jter->V[j] - 1];
-                            buff /= jter->size;
-                            if (outer < 0 || buff < outer)
-                                outer = buff;
-                        }
-                    silh += ((outer - inner) / max(outer, inner));
-                }
-            else
-                silh += single_silh;
+    if (!current.empty())
+        while (current.front().height > CritDist * (1.0 - (variation > 1 ? 1 : variation))) {
+            G4double silh = 0;
+            for (auto iter = current.cbegin(); iter != current.cend(); iter++) {
+                if (iter->size > 1)
+                    for (G4int i = 0; i < iter->size; i++) {
+                        G4double inner = 0, outer = -1;
+                        for (G4int j = 0; j < iter->size; j++)
+                            inner += g.adj[iter->V[i] - 1][iter->V[j] - 1];
+                        inner /= (iter->size - 1);
+                        for (auto jter = current.cbegin(); jter != current.cend(); jter++)
+                            if (iter != jter) {
+                                G4double buff = 0;
+                                for (G4int j = 0; j < jter->size; j++)
+                                    buff += g.adj[iter->V[i] - 1][jter->V[j] - 1];
+                                buff /= jter->size;
+                                if (outer < 0 || buff < outer)
+                                    outer = buff;
+                            }
+                        silh += ((outer - inner) / max(outer, inner));
+                    }
+                else
+                    silh += single_silh;
+            }
+            silh /= SpecAb;
+            if (silh > max_silh) {
+                max_silh = silh;
+                best = current;
+            }
+            //divide the biggest cluster into two
+            current.push_back(*current.front().children.first);
+            current.push_back(*current.front().children.second);
+            current.erase(current.begin());
+            sort(current.begin(), current.end(), cd_comp);
         }
-        silh /= SpecAa;
-        if (silh > max_silh) {
-            max_silh = silh;
-            best = current;
-        }
-        //divide the biggest cluster into two
-        current.push_back(*current.front().children.first);
-        current.push_back(*current.front().children.second);
-        current.erase(current.begin());
-        sort(current.begin(), current.end(), cd_comp);
-    }
     //conversion to vector<vector<int>>
     for (const auto &iter: best)
         clusters_B.emplace_back(std::vector<G4int>(iter.V, iter.V + iter.size));
@@ -212,7 +209,7 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(max_alpha) {
 
     //get dendrograms for both nucleons
     GTree treeA = g.AdvancedKruskalMSTDendro();
-    GTree treeB = g.AdvancedKruskalMSTDendro();
+    GTree treeB = g_B.AdvancedKruskalMSTDendro();
 
     //get the clustering with the biggest applicable CD:
     std::vector<GNode> current = treeA.get_cluster(CritDistA * (1.0 + variation));
@@ -220,26 +217,27 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(max_alpha) {
     G4int max_alpha = 0;
     std::vector<GNode> best = current;
     //find the cluster with the largest alpha particles count
-    while (current.front().height > CritDistA * (1.0 - (variation > 1 ? 1 : variation))) {
-        G4int alpha = 0;
-        for (auto & iter : current) {
-            G4int z_count = 0;
-            for (G4int i = 0; i < iter.size; i++)
-                if ((nucleons.at(iter.V[i] - 1)).isospin == 1)
-                    z_count++;
-            if (z_count == 2 && iter.size == 4)
-                alpha++;
+    if (!current.empty())
+        while (current.front().height > CritDistA * (1.0 - (variation > 1 ? 1 : variation))) {
+            G4int alpha = 0;
+            for (auto & iter : current) {
+                G4int z_count = 0;
+                for (G4int i = 0; i < iter.size; i++)
+                    if ((nucleons.at(iter.V[i] - 1)).isospin == 1)
+                        z_count++;
+                if (z_count == 2 && iter.size == 4)
+                    alpha++;
+            }
+            if (alpha > max_alpha) {
+                max_alpha = alpha;
+                best = current;
+            }
+            //divide the biggest cluster into two
+            current.push_back(*current.front().children.first);
+            current.push_back(*current.front().children.second);
+            current.erase(current.begin());
+            sort(current.begin(), current.end(), cd_comp);
         }
-        if (alpha > max_alpha) {
-            max_alpha = alpha;
-            best = current;
-        }
-        //divide the biggest cluster into two
-        current.push_back(*current.front().children.first);
-        current.push_back(*current.front().children.second);
-        current.erase(current.begin());
-        sort(current.begin(), current.end(), cd_comp);
-    }
     //conversion to vector<vector<int>>
     for (const auto &iter: best)
         clusters_A.emplace_back(std::vector<G4int>(iter.V, iter.V + iter.size));
@@ -252,26 +250,27 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(max_alpha) {
     max_alpha = 0;
     best = current;
     //find the cluster with the largest alpha particles count
-    while (current.front().height > CritDist * (1.0 - (variation > 1 ? 1 : variation))) {
-        G4int alpha = 0;
-        for (auto & iter : current) {
-            G4int z_count = 0;
-            for (G4int i = 0; i < iter.size; i++)
-                if ((nucleons.at(iter.V[i] - 1)).isospin == 1)
-                    z_count++;
-            if (z_count == 2 && iter.size == 4)
-                alpha++;
+    if (!current.empty())
+        while (current.front().height > CritDist * (1.0 - (variation > 1 ? 1 : variation))) {
+            G4int alpha = 0;
+            for (auto & iter : current) {
+                G4int z_count = 0;
+                for (G4int i = 0; i < iter.size; i++)
+                    if ((nucleons_B.at(iter.V[i] - 1)).isospin == 1)
+                        z_count++;
+                if (z_count == 2 && iter.size == 4)
+                    alpha++;
+            }
+            if (alpha > max_alpha) {
+                max_alpha = alpha;
+                best = current;
+            }
+            //divide the biggest cluster into two
+            current.push_back(*current.front().children.first);
+            current.push_back(*current.front().children.second);
+            current.erase(current.begin());
+            sort(current.begin(), current.end(), cd_comp);
         }
-        if (alpha > max_alpha) {
-            max_alpha = alpha;
-            best = current;
-        }
-        //divide the biggest cluster into two
-        current.push_back(*current.front().children.first);
-        current.push_back(*current.front().children.second);
-        current.erase(current.begin());
-        sort(current.begin(), current.end(), cd_comp);
-    }
     //conversion to vector<vector<int>>
     for (const auto &iter: best)
         clusters_B.emplace_back(std::vector<G4int>(iter.V, iter.V + iter.size));
@@ -285,7 +284,7 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(alpha_destroy) {
 
     //get dendrograms for both nucleons
     GTree treeA = g.AdvancedKruskalMSTDendro();
-    GTree treeB = g.AdvancedKruskalMSTDendro();
+    GTree treeB = g_B.AdvancedKruskalMSTDendro();
 
     //get the clustering with the biggest applicable CD:
     std::vector<GNode> current = treeA.get_cluster(CritDistA * (1.0 + variation));
@@ -294,25 +293,27 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(alpha_destroy) {
     std::vector<std::vector<GNode>> all(5, std::vector<GNode>());
 
     //find the cluster with the largest alpha particles count
-    while (current.front().height > CritDistA * (1.0 - (variation > 1 ? 1 : variation))) {
-        G4int alpha = 0;
-        for (auto & iter : current) {
-            G4int z_count = 0;
-            for (G4int i = 0; i < iter.size; i++)
-                if ((nucleons.at(iter.V[i] - 1)).isospin == 1)
-                    z_count++;
-            if (z_count == 2 && iter.size == 4)
-                alpha++;
+    if (!current.empty())
+        while (current.front().height > CritDistA * (1.0 - (variation > 1 ? 1 : variation))) {
+            G4int alpha = 0;
+            for (auto & iter : current) {
+                G4int z_count = 0;
+                for (G4int i = 0; i < iter.size; i++)
+                    if ((nucleons.at(iter.V[i] - 1)).isospin == 1)
+                        z_count++;
+                if (z_count == 2 && iter.size == 4)
+                    alpha++;
+            }
+            if (alpha > max_alpha)
+                max_alpha = alpha;
+            if (all[alpha].empty())
+                all[alpha] = current;
+            //divide the biggest cluster into two
+            current.push_back(*current.front().children.first);
+            current.push_back(*current.front().children.second);
+            current.erase(current.begin());
+            sort(current.begin(), current.end(), cd_comp);
         }
-        if (alpha > max_alpha)
-            max_alpha = alpha;
-        all[alpha] = current;
-        //divide the biggest cluster into two
-        current.push_back(*current.front().children.first);
-        current.push_back(*current.front().children.second);
-        current.erase(current.begin());
-        sort(current.begin(), current.end(), cd_comp);
-    }
     //destroy clusters
     G4double p_dest = 0.002;
     G4int n_destr = gRandom->Binomial(max_alpha, p_dest);
@@ -335,25 +336,27 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(alpha_destroy) {
     all = std::vector<std::vector<GNode>>(5, std::vector<GNode>());
 
     //find the cluster with the largest alpha particles count
-    while (current.front().height > CritDist * (1.0 - (variation > 1 ? 1 : variation))) {
-        G4int alpha = 0;
-        for (auto & iter : current) {
-            G4int z_count = 0;
-            for (G4int i = 0; i < iter.size; i++)
-                if ((nucleons.at(iter.V[i] - 1)).isospin == 1)
-                    z_count++;
-            if (z_count == 2 && iter.size == 4)
-                alpha++;
+    if (!current.empty())
+        while (current.front().height > CritDist * (1.0 - (variation > 1 ? 1 : variation))) {
+            G4int alpha = 0;
+            for (auto & iter : current) {
+                G4int z_count = 0;
+                for (G4int i = 0; i < iter.size; i++)
+                    if ((nucleons_B.at(iter.V[i] - 1)).isospin == 1)
+                        z_count++;
+                if (z_count == 2 && iter.size == 4)
+                    alpha++;
+            }
+            if (alpha > max_alpha)
+                max_alpha = alpha;
+            if (all[alpha].empty())
+                all[alpha] = current;
+            //divide the biggest cluster into two
+            current.push_back(*current.front().children.first);
+            current.push_back(*current.front().children.second);
+            current.erase(current.begin());
+            sort(current.begin(), current.end(), cd_comp);
         }
-        if (alpha > max_alpha)
-            max_alpha = alpha;
-        all[alpha] = current;
-        //divide the biggest cluster into two
-        current.push_back(*current.front().children.first);
-        current.push_back(*current.front().children.second);
-        current.erase(current.begin());
-        sort(current.begin(), current.end(), cd_comp);
-    }
     //destroy clusters
     n_destr = gRandom->Binomial(max_alpha, p_dest);
     n_remain = max_alpha - n_destr;

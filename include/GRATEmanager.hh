@@ -47,6 +47,7 @@ class GRATEmanager
   inline G4String GetSysA() {return SysA;}
   inline G4String GetSysB() {return SysB;}
   inline G4String GetDeexModel() {return DeExModel;};
+  inline G4String GetClustModel() {return  ClustModel;};
   inline G4int GetSourceZ() {return sourceZ;}
   inline G4int GetSourceA() {return sourceA;}
   inline G4int GetSourceZb() {return sourceZb;}
@@ -62,6 +63,8 @@ class GRATEmanager
   inline G4double GetUpEnB() {return upperLimitExEnB;};
   inline G4double GetLowB() {return lowLimitB;};
   inline G4double GetUpB() {return upperLimitB;};
+  inline G4double GetVariation() {return  variation;};
+  inline G4double GetSingleSilhouette() {return singleSilhouette;};
   inline G4bool   WriteMomentum() {return wM;};
   inline G4bool   WritePseudorapidity() {return wP;};
   inline InitialConditions GetInitialContidions() {return *InCond;};
@@ -98,6 +101,7 @@ class GRATEmanager
   G4String fileType;
   G4String fileOpenPath;
   G4String DeExModel;
+  G4String ClustModel;
 
   G4String     fileFullName;
   G4String     SysA;
@@ -114,6 +118,8 @@ class GRATEmanager
   G4double upperLimitExEnB;
   G4double lowLimitB;
   G4double upperLimitB;
+  G4double singleSilhouette;
+  G4double variation;
   G4int    binsExEn;
   G4int    eventsPerBin;
 
