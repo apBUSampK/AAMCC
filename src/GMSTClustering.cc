@@ -1,4 +1,9 @@
 #include "../include/GMSTClustering.hh"
+#include <queue>
+
+bool cd_comp(const GNode& left, const GNode& right) {
+    return left.height > right.height;
+}
 
 GMSTCluster::GMSTCluster(G4int Z_in, G4int A_in): 
 A(A_in), Z(Z_in)
@@ -12,127 +17,405 @@ GMSTClustering::GMSTClustering(){
 CritDist = 100;
 };
 
-GMSTClustering::GMSTClustering(G4double CD_in, G4double Aa_in, G4double Ab_in){
-CritDist = CD_in;
+GMSTClustering::GMSTClustering(G4double CD_in, G4double Aa_in, G4double Ab_in, G4double single_silh, G4double variation){
+    CritDist = CD_in;
     SpecAa = Aa_in;
     SpecAb = Ab_in;
+    this->variation = variation;
+    this->single_silh = single_silh;
 };
 
-GMSTClustering::~GMSTClustering(){
-};
+GMSTClustering::~GMSTClustering() = default;
 
-Graph GMSTClustering::ClusterToGraph(NucleonVector* nucleons, G4double A){
-    Graph g(A, A*(A-1)/2);
-    //  making full graph of nucleons
-    for(G4int iArray = 0; iArray < nucleons->size(); iArray++){
-    	Nucleon *nucleon=&(nucleons->at(iArray));
-    	for(G4int iArray_pairs = iArray + 1; iArray_pairs < nucleons->size(); iArray_pairs++){
-    		Nucleon *nucleon_pair=&(nucleons->at(iArray_pairs));
-    		g.addEdge(iArray, iArray_pairs, std::sqrt(pow(nucleon->GetX() - nucleon_pair->GetX(),2) + pow(nucleon->GetY() - nucleon_pair->GetY(),2) + pow(nucleon->GetZ() - nucleon_pair->GetZ(),2)));
-    	}
-	}
-    return g;
-};
-
-void GMSTClustering::SetCDExEn(G4double Ex, G4int A) {
-   if(Ex/G4double(A) < 2.17*MeV){CritDist = d0;}
-   else{//kappa = std::pow(1/(1+aColRel*std::pow(G4double(A),-0.333333333333333333)+aSurfRel*std::pow(G4double(A),-0.666666666666666)),0.3333333333333);
-       kappa = 1;
-       CritDist = d0*kappa*std::pow(Ex/(eps0*G4double(A)),1./3.*alphaPow);}
+void GMSTClustering::SetUp(NucleonVector* nucleons_in, G4double ExA, G4double ExB, CLHEP::Hep3Vector boostA, CLHEP::Hep3Vector boostB) {
+    SpecAa = Z = SpecAb = Zb = 0;
+    this->ExA = ExA;
+    this->ExB = ExB;
+    this->boostA = boostA;
+    this->boostB = boostB;
+    SpecAa = nucleons_in->GetA("A");
+    SpecAb = nucleons_in->GetA("B");
+    nucleons = NucleonVector();
+    nucleons_B = NucleonVector();
+    for(int iArray = 0; iArray < nucleons_in->size(); iArray++) {
+        Nucleon *nucleon = &(nucleons_in->at(iArray));
+        if (nucleon->isParticipant == 0) {
+            switch ("A" == nucleon->Nucl ? 0 : 1) {
+                case 0:
+                    SpecAa++;
+                    nucleons.push_back(*nucleon);
+                    if (nucleon->isospin == 1)
+                        Z++;
+                    break;
+                case 1:
+                    SpecAb++;
+                    nucleons_B.push_back(*nucleon);
+                    if (nucleon->isospin == 1)
+                        Zb++;
+            }
+        }
+    }
+    if(ExA > 0 && ExB > 0) this->SetCDExEn(ExA, SpecAa);
+    CritDistA = CritDist;
+    if(ExA > 0 && ExB > 0) this->SetCDExEn(ExB, SpecAb);
+    g = Graph(SpecAa, SpecAa * (SpecAa - 1) / 2);
+    g_B = Graph(SpecAb, SpecAb * (SpecAb - 1) / 2);
+    //  making full graphs of nucleons
+    for(G4int iArray = 0; iArray < nucleons.size(); iArray++){
+        const Nucleon &nucleon = nucleons[iArray];
+        for(auto iArray_pairs = iArray + 1; iArray_pairs < nucleons.size(); iArray_pairs++) {
+            const Nucleon &nucleon_pair = nucleons[iArray_pairs];
+            g.addEdge(iArray, iArray_pairs, std::sqrt(
+                    pow(nucleon.GetX() - nucleon_pair.GetX(), 2) + pow(nucleon.GetY() - nucleon_pair.GetY(), 2) +
+                    pow(nucleon.GetZ() - nucleon_pair.GetZ(), 2)));
+        }
+    }
+    for(G4int iArray = 0; iArray < nucleons_B.size(); iArray++){
+        const Nucleon &nucleon = nucleons_B[iArray];
+        for(auto iArray_pairs = iArray + 1; iArray_pairs < nucleons_B.size(); iArray_pairs++) {
+            const Nucleon &nucleon_pair = nucleons_B[iArray_pairs];
+            g_B.addEdge(iArray, iArray_pairs, std::sqrt(
+                    pow(nucleon.GetX() - nucleon_pair.GetX(), 2) + pow(nucleon.GetY() - nucleon_pair.GetY(), 2) +
+                    pow(nucleon.GetZ() - nucleon_pair.GetZ(), 2)));
+        }
+    }
 }
 
-std::vector<G4FragmentVector> GMSTClustering::GetClusters(NucleonVector* nucleons_in, G4double ExA, G4double ExB, CLHEP::Hep3Vector boostA, CLHEP::Hep3Vector boostB){
-	G4int A = 0;
-	G4int Z = 0;
-	G4int Ab = 0;
-	G4int Zb = 0;
-    nucleonVector = nucleons_in;
-    SpecAa = nucleonVector->GetA("A"); SpecAb = nucleonVector->GetA("B");
+void GMSTClustering::SetCDExEn(G4double Ex, G4int NoN) {
+   if(Ex/G4double(NoN) < 2.17 * MeV){ CritDist = d0;}
+   else{//kappa = std::pow(1/(1+aColRel*std::pow(G4double(SpecAa),-0.333333333333333333)+aSurfRel*std::pow(G4double(SpecAa),-0.666666666666666)),0.3333333333333);
+       kappa = 1;
+       CritDist = d0*kappa*std::pow(Ex/(eps0*G4double(SpecAa)), 1. / 3. * alphaPow);}
+}
 
-	NucleonVector *nucleons = new NucleonVector(); // nucleons from Side A
-    NucleonVector *nucleons_B = new NucleonVector(); // nucleons from Side B
+std::vector<G4FragmentVector> GMSTClustering::GetClusters(cut) {
+    std::vector<std::vector<G4int>> clusters_A, clusters_B;
 
-	for(G4int iArray = 0; iArray < nucleons_in->size(); iArray++){
-		Nucleon *nucleon= &(nucleons_in->at(iArray));
-		if(nucleon->isParticipant == 0 && nucleon->Nucl == "A"){
-			A+=1;
-			nucleons->push_back(nucleons_in->at(iArray));
-		}
-		if(nucleon->isParticipant == 0 && nucleon->Nucl == "A" && nucleon->isospin == 1){Z+=1;} 
-		if(nucleon->isParticipant == 0 && nucleon->Nucl == "B"){
-			Ab+=1;
-			nucleons_B->push_back(nucleons_in->at(iArray));
-		}
-		if(nucleon->isParticipant == 0 && nucleon->Nucl == "B" && nucleon->isospin == 1){Zb+=1;}
-	}
-	// Creating a graph of nucleons (side A)
-	Graph g = this->ClusterToGraph(nucleons, A);
+    //get dendrograms for both nucleons
+    GTree treeA = g.AdvancedKruskalMSTDendro();
+    GTree treeB = g_B.AdvancedKruskalMSTDendro();
+    //get the clustering with corresponding CD:
+    for (const auto & iter : treeA.get_cluster(CritDistA))
+        clusters_A.emplace_back(std::vector<G4int>(iter.V, iter.V + iter.size));
+    for (const auto & iter : treeB.get_cluster(CritDist))
+        clusters_B.emplace_back(std::vector<G4int>(iter.V, iter.V + iter.size));
 
-	// Creating a graph of nucleons (side B)
-	Graph g_B = this->ClusterToGraph(nucleons_B, Ab);
+    //compile output vectors and calculate momentum
+    return CalculateMomentum(CompileVector(clusters_A, clusters_B), ExA, ExB, boostA, boostB);
+};
 
-	// Applying MST + critical distance cut + DFS clustering (side A)
-	vector< vector <G4int> > clusters;
-	if(ExA > 0 && ExB > 0) this->SetCDExEn(ExA,A);
-	//G4cout<<"CritDist = "<<CritDist<<"\n";
-    CritDistA = this->CritDist;
-    clusters = g.AdvancedKruskalMST(this->CritDist);
+std::vector<G4FragmentVector> GMSTClustering::GetClusters(silhouette) {
+    std::vector<std::vector<G4int>> clusters_A, clusters_B;
 
-    // Applying MST + critical distance cut + DFS clustering (side B)
-	vector< vector <G4int> > clusters_B;
-    if(ExA > 0 && ExB > 0) this->SetCDExEn(ExB,Ab);
-    clusters_B = g_B.AdvancedKruskalMST(this->CritDist);
+    //get dendrograms for both nucleons
+    GTree treeA = g.AdvancedKruskalMSTDendro();
+    GTree treeB = g.AdvancedKruskalMSTDendro();
 
+    //get the clustering with the biggest applicable CD:
+    std::vector<GNode> current = treeA.get_cluster(CritDistA * (1.0 + variation));
+    std::sort(current.begin(), current.end(), cd_comp);
+    G4double max_silh = -1;
+    std::vector<GNode> best = current;
+    //calculate mean cluster silhouettes until min applicable CD
+    //separate nucleon clusters are given silhouette of single_silh
+    while (current.front().height > CritDistA * (1.0 - (variation > 1 ? 1 : variation))) {
+        G4double silh = 0;
+        for (auto iter = current.cbegin(); iter != current.cend(); iter++) {
+            if (iter->size > 1)
+                for (G4int i = 0; i < iter->size; i++) {
+                    G4double inner = 0, outer = -1;
+                    for (G4int j = 0; j < iter->size; j++)
+                        inner += g.adj[iter->V[i] - 1][iter->V[j] - 1];
+                    inner /= (iter->size - 1);
+                    for (auto jter = current.cbegin(); jter != current.cend(); jter++)
+                        if (iter != jter) {
+                            G4double buff = 0;
+                            for (G4int j = 0; j < jter->size; j++)
+                                buff += g.adj[iter->V[i] - 1][jter->V[j] - 1];
+                            buff /= jter->size;
+                            if (outer < 0 || buff < outer)
+                                outer = buff;
+                        }
+                    silh += ((outer - inner) / max(outer, inner));
+                }
+            else
+                silh += single_silh;
+        }
+        silh /= SpecAa;
+        if (silh > max_silh) {
+            max_silh = silh;
+            best = current;
+        }
+        //divide the biggest cluster into two
+        current.push_back(*current.front().children.first);
+        current.push_back(*current.front().children.second);
+        current.erase(current.begin());
+        sort(current.begin(), current.end(), cd_comp);
+    }
+    //conversion to vector<vector<int>>
+    for (const auto &iter: best)
+        clusters_A.emplace_back(std::vector<G4int>(iter.V, iter.V + iter.size));
+
+    //repeat for B nucleus
+
+    //get the clustering with the biggest applicable CD:
+    current = treeB.get_cluster(CritDist * (1.0 + variation));
+    std::sort(current.begin(), current.end(), cd_comp);
+    max_silh = -1;
+    best = current;
+    //calculate mean cluster silhouettes until min applicable CD
+    //separate nucleon clusters are given silhouette of single_silh
+    while (current.front().height > CritDist * (1.0 - (variation > 1 ? 1 : variation))) {
+        G4double silh = 0;
+        for (auto iter = current.cbegin(); iter != current.cend(); iter++) {
+            if (iter->size > 1)
+                for (G4int i = 0; i < iter->size; i++) {
+                    G4double inner = 0, outer = -1;
+                    for (G4int j = 0; j < iter->size; j++)
+                        inner += g.adj[iter->V[i] - 1][iter->V[j] - 1];
+                    inner /= (iter->size - 1);
+                    for (auto jter = current.cbegin(); jter != current.cend(); jter++)
+                        if (iter != jter) {
+                            G4double buff = 0;
+                            for (G4int j = 0; j < jter->size; j++)
+                                buff += g.adj[iter->V[i] - 1][jter->V[j] - 1];
+                            buff /= jter->size;
+                            if (outer < 0 || buff < outer)
+                                outer = buff;
+                        }
+                    silh += ((outer - inner) / max(outer, inner));
+                }
+            else
+                silh += single_silh;
+        }
+        silh /= SpecAa;
+        if (silh > max_silh) {
+            max_silh = silh;
+            best = current;
+        }
+        //divide the biggest cluster into two
+        current.push_back(*current.front().children.first);
+        current.push_back(*current.front().children.second);
+        current.erase(current.begin());
+        sort(current.begin(), current.end(), cd_comp);
+    }
+    //conversion to vector<vector<int>>
+    for (const auto &iter: best)
+        clusters_B.emplace_back(std::vector<G4int>(iter.V, iter.V + iter.size));
+
+    //compile output vectors and calculate momentum
+    return CalculateMomentum(CompileVector(clusters_A, clusters_B), ExA, ExB, boostA, boostB);
+}
+
+std::vector<G4FragmentVector> GMSTClustering::GetClusters(max_alpha) {
+    std::vector<std::vector<G4int>> clusters_A, clusters_B;
+
+    //get dendrograms for both nucleons
+    GTree treeA = g.AdvancedKruskalMSTDendro();
+    GTree treeB = g.AdvancedKruskalMSTDendro();
+
+    //get the clustering with the biggest applicable CD:
+    std::vector<GNode> current = treeA.get_cluster(CritDistA * (1.0 + variation));
+    std::sort(current.begin(), current.end(), cd_comp);
+    G4int max_alpha = 0;
+    std::vector<GNode> best = current;
+    //find the cluster with the largest alpha particles count
+    while (current.front().height > CritDistA * (1.0 - (variation > 1 ? 1 : variation))) {
+        G4int alpha = 0;
+        for (auto & iter : current) {
+            G4int z_count = 0;
+            for (G4int i = 0; i < iter.size; i++)
+                if ((nucleons.at(iter.V[i] - 1)).isospin == 1)
+                    z_count++;
+            if (z_count == 2 && iter.size == 4)
+                alpha++;
+        }
+        if (alpha > max_alpha) {
+            max_alpha = alpha;
+            best = current;
+        }
+        //divide the biggest cluster into two
+        current.push_back(*current.front().children.first);
+        current.push_back(*current.front().children.second);
+        current.erase(current.begin());
+        sort(current.begin(), current.end(), cd_comp);
+    }
+    //conversion to vector<vector<int>>
+    for (const auto &iter: best)
+        clusters_A.emplace_back(std::vector<G4int>(iter.V, iter.V + iter.size));
+
+    //repeat for B nucleus
+
+    //get the clustering with the biggest applicable CD:
+    current = treeB.get_cluster(CritDist * (1.0 + variation));
+    std::sort(current.begin(), current.end(), cd_comp);
+    max_alpha = 0;
+    best = current;
+    //find the cluster with the largest alpha particles count
+    while (current.front().height > CritDist * (1.0 - (variation > 1 ? 1 : variation))) {
+        G4int alpha = 0;
+        for (auto & iter : current) {
+            G4int z_count = 0;
+            for (G4int i = 0; i < iter.size; i++)
+                if ((nucleons.at(iter.V[i] - 1)).isospin == 1)
+                    z_count++;
+            if (z_count == 2 && iter.size == 4)
+                alpha++;
+        }
+        if (alpha > max_alpha) {
+            max_alpha = alpha;
+            best = current;
+        }
+        //divide the biggest cluster into two
+        current.push_back(*current.front().children.first);
+        current.push_back(*current.front().children.second);
+        current.erase(current.begin());
+        sort(current.begin(), current.end(), cd_comp);
+    }
+    //conversion to vector<vector<int>>
+    for (const auto &iter: best)
+        clusters_B.emplace_back(std::vector<G4int>(iter.V, iter.V + iter.size));
+
+    //compile output vectors and calculate momentum
+    return CalculateMomentum(CompileVector(clusters_A, clusters_B), ExA, ExB, boostA, boostB);
+}
+
+std::vector<G4FragmentVector> GMSTClustering::GetClusters(alpha_destroy) {
+    std::vector<std::vector<G4int>> clusters_A, clusters_B;
+
+    //get dendrograms for both nucleons
+    GTree treeA = g.AdvancedKruskalMSTDendro();
+    GTree treeB = g.AdvancedKruskalMSTDendro();
+
+    //get the clustering with the biggest applicable CD:
+    std::vector<GNode> current = treeA.get_cluster(CritDistA * (1.0 + variation));
+    std::sort(current.begin(), current.end(), cd_comp);
+    G4int max_alpha = 0;
+    std::vector<std::vector<GNode>> all(5, std::vector<GNode>());
+
+    //find the cluster with the largest alpha particles count
+    while (current.front().height > CritDistA * (1.0 - (variation > 1 ? 1 : variation))) {
+        G4int alpha = 0;
+        for (auto & iter : current) {
+            G4int z_count = 0;
+            for (G4int i = 0; i < iter.size; i++)
+                if ((nucleons.at(iter.V[i] - 1)).isospin == 1)
+                    z_count++;
+            if (z_count == 2 && iter.size == 4)
+                alpha++;
+        }
+        if (alpha > max_alpha)
+            max_alpha = alpha;
+        all[alpha] = current;
+        //divide the biggest cluster into two
+        current.push_back(*current.front().children.first);
+        current.push_back(*current.front().children.second);
+        current.erase(current.begin());
+        sort(current.begin(), current.end(), cd_comp);
+    }
+    //destroy clusters
+    G4double p_dest = 0.002;
+    G4int n_destr = gRandom->Binomial(max_alpha, p_dest);
+    G4int n_remain = max_alpha - n_destr;
+    while(all[n_remain].empty()) {
+        n_remain = (n_remain) ? (n_remain - 1) : 4; //loop over [0; 4]
+        if (n_remain == max_alpha - n_destr)
+            break;
+    }
+    //conversion to vector<vector<int>>
+    for (const auto &iter: all[n_remain])
+        clusters_A.emplace_back(std::vector<G4int>(iter.V, iter.V + iter.size));
+
+    //repeat for B nucleus
+
+    //get the clustering with the biggest applicable CD:
+    current = treeB.get_cluster(CritDist * (1.0 + variation));
+    std::sort(current.begin(), current.end(), cd_comp);
+    max_alpha = 0;
+    all = std::vector<std::vector<GNode>>(5, std::vector<GNode>());
+
+    //find the cluster with the largest alpha particles count
+    while (current.front().height > CritDist * (1.0 - (variation > 1 ? 1 : variation))) {
+        G4int alpha = 0;
+        for (auto & iter : current) {
+            G4int z_count = 0;
+            for (G4int i = 0; i < iter.size; i++)
+                if ((nucleons.at(iter.V[i] - 1)).isospin == 1)
+                    z_count++;
+            if (z_count == 2 && iter.size == 4)
+                alpha++;
+        }
+        if (alpha > max_alpha)
+            max_alpha = alpha;
+        all[alpha] = current;
+        //divide the biggest cluster into two
+        current.push_back(*current.front().children.first);
+        current.push_back(*current.front().children.second);
+        current.erase(current.begin());
+        sort(current.begin(), current.end(), cd_comp);
+    }
+    //destroy clusters
+    n_destr = gRandom->Binomial(max_alpha, p_dest);
+    n_remain = max_alpha - n_destr;
+    while(all[n_remain].empty()) {
+        n_remain = (n_remain) ? (n_remain - 1) : 4; //loop over [0; 4]
+        if (n_remain == max_alpha - n_destr)
+            break;
+    }
+    //conversion to vector<vector<int>>
+    for (const auto &iter: all[n_remain])
+        clusters_B.emplace_back(std::vector<G4int>(iter.V, iter.V + iter.size));
+
+    //compile output vectors and calculate momentum
+    return CalculateMomentum(CompileVector(clusters_A, clusters_B), ExA, ExB, boostA, boostB);
+}
+
+std::vector<G4FragmentVector> GMSTClustering::CompileVector(const std::vector<std::vector<G4int>>& clusters_A, const std::vector<std::vector<G4int>>& clusters_B) {
     std::vector<G4FragmentVector> outClusters;
     G4FragmentVector output_vector_A;
     G4FragmentVector output_vector_B;
 
-    // Filling a Clister Vector (side A)
-    for(G4int i = 0; i < clusters.size(); ++i) {
-    	G4int Z_clust = 0;
-    	G4int A_clust = 0;
-    	for(G4int j = 0; j < clusters[i].size(); ++j) {
-        	Nucleon *nucleon=&(nucleons->at((clusters[i])[j]));
-        	if(nucleon->isospin == 1)
-        	{
-        		Z_clust += 1;
-        	}
-        	A_clust += 1;
+    // Filling a Cluster Vector (side A)
+    for(G4int i = 0; i < clusters_A.size(); ++i) {
+        G4int Z_clust = 0;
+        G4int A_clust = 0;
+        for(G4int j = 0; j < clusters_A[i].size(); ++j) {
+            Nucleon *nucleon=&(nucleons.at((clusters_A[i])[j] - 1));
+            if(nucleon->isospin == 1)
+            {
+                Z_clust += 1;
+            }
+            A_clust += 1;
         }
 
-    G4Fragment* frag = new G4Fragment();
-    frag->SetA(A_clust);
-    frag->SetZ(Z_clust);
-    output_vector_A.push_back(frag);
+        G4Fragment* frag = new G4Fragment();
+        frag->SetA(A_clust);
+        frag->SetZ(Z_clust);
+        output_vector_A.push_back(frag);
     }
 
-    // Filling a Clister Vector (side B)
+    // Filling a Cluster Vector (side B)
     for(G4int i = 0; i < clusters_B.size(); ++i) {
-    	G4int Z_clust = 0;
-    	G4int A_clust = 0;
-    	for(G4int j = 0; j < clusters_B[i].size(); ++j) {
-        	Nucleon *nucleon=&(nucleons_B->at((clusters_B[i])[j]));
-                if(nucleon->isospin == 1)
-        	{
-        		Z_clust += 1;
-        	}
-        	A_clust += 1;
+        G4int Z_clust = 0;
+        G4int A_clust = 0;
+        for(G4int j = 0; j < clusters_B[i].size(); ++j) {
+            Nucleon *nucleon=&(nucleons_B.at((clusters_B[i])[j] - 1));
+            if(nucleon->isospin == 1)
+            {
+                Z_clust += 1;
+            }
+            A_clust += 1;
         }
-    G4Fragment* frag = new G4Fragment();
-    frag->SetA(A_clust);
-    frag->SetZ(Z_clust);
-    output_vector_B.push_back(frag);
+        G4Fragment* frag = new G4Fragment();
+        frag->SetA(A_clust);
+        frag->SetZ(Z_clust);
+        output_vector_B.push_back(frag);
     }
 
     outClusters.push_back(output_vector_A);
     outClusters.push_back(output_vector_B);
-
-    delete nucleons;
-    delete nucleons_B;
-
-    return CalculateMomentum(outClusters, ExA, ExB, boostA, boostB);
-    //return outClusters;
-};
+    return outClusters;
+}
 
 std::vector<G4FragmentVector> GMSTClustering::CalculateMomentum(std::vector<G4FragmentVector> noMomClusters, G4double ExEnA, G4double ExEnB, CLHEP::Hep3Vector boostA, CLHEP::Hep3Vector boostB) {
     std::vector<G4FragmentVector> momClusters = noMomClusters;
@@ -222,144 +505,173 @@ Graph::Graph(G4int V, G4int E)
 {
     this->V = V;
     this->E = E;
-    adj = new list<G4int>[V];
+    adj = std::vector<std::vector<G4double>>(V, std::vector<G4double>(V, 0));
 }
 
 Graph::Graph()
 {
     this->V = 0;
     this->E = 0;
+    adj = std::vector<std::vector<G4double>>(V, std::vector<G4double>(V, 0));
 }
 
-Graph::~Graph()
-{
-    delete[] adj;
-}
+Graph::~Graph() = default;
 
 void Graph::addEdge(G4int u, G4int v, G4double w)
 {
     edges.push_back({ w, {u, v} });
+    adj[u][v] = adj[v][u] = w;
 }
 
-vector< vector <G4int> > Graph::AdvancedKruskalMST(G4double CD_in)
+GTree Graph::AdvancedKruskalMSTDendro()
 {
     // Sort edges in increasing order on basis of cost 
     sort(edges.begin(), edges.end());
 
-    // Create disjoint sets 
-    DisjointSets ds(V);
+    // Create a tree handler
+    GTree tr(V);
 
     // Iterate through all sorted edges 
-    vector< pair<G4double, iPair> >::iterator it;
+    std::vector< std::pair<G4double, iPair> >::iterator it;
     for (it = edges.begin(); it != edges.end(); it++)
     {
         G4int u = it->second.first;
         G4int v = it->second.second;
 
-        G4int set_u = ds.find(u);
-        G4int set_v = ds.find(v);
-
         // Check if the selected edge is creating 
         // a cycle or not (Cycle is created if u 
         // and v belong to same set) 
-        if (set_u != set_v)
+        if (tr.get_node(u) != tr.get_node(v))
         {
-            // Current edge will be in the MST 
-            if(it->first < CD_in){
-            	this->addConn(u, v);
+            // create new node
+            tr.merge(u, v, it->first);
+        }
+    }
+
+    return tr;
+}
+
+GNode::GNode(G4int n) {
+    size = 1;
+    V = new G4int[1];
+    V[0] = n;
+    height = 0;
+    children = std::make_pair(nullptr, nullptr);
+}
+
+GNode::GNode(std::shared_ptr<GNode> first, std::shared_ptr<GNode> second, G4double height) {
+    size = first->size + second->size;
+    V = new G4int[size];
+    for (G4int i = 0; i < size; i++) {
+        G4int buff = (i < first->size) ? first->V[i] : second->V[i - first->size];
+        V[i] = buff;
+    }
+    this->height = height;
+    children = std::make_pair(first, second);
+}
+
+GNode::GNode(const GNode& right) {
+    size = right.size;
+    V = new G4int[size];
+    for (G4int i = 0; i < size; i++)
+        V[i] = right.V[i];
+    height = right.height;
+    if (right.children.first == nullptr)
+        children = std::make_pair(std::shared_ptr<GNode>(nullptr),std::shared_ptr<GNode>(nullptr));
+    else
+        children = std::make_pair(make_shared<GNode>(*right.children.first), make_shared<GNode>(*right.children.second));
+}
+
+GNode& GNode::operator=(const GNode& right) {
+    size = right.size;
+    delete[] V;
+    V = new G4int[size];
+    for (G4int i = 0; i < size; i++)
+        V[i] = right.V[i];
+    height = right.height;
+    if (right.children.first == nullptr)
+        children = std::make_pair(std::shared_ptr<GNode>(nullptr),std::shared_ptr<GNode>(nullptr));
+    else
+        children = std::make_pair(make_shared<GNode>(*right.children.first), make_shared<GNode>(*right.children.second));
+    return *this;
+}
+
+GNode::~GNode() {
+    delete[] V;
+}
+
+GTree::GTree(int size) {
+    this->size = size;
+    nodes = std::vector<std::shared_ptr<GNode>>(size);
+    for (G4int i = 0; i < size; i++)
+        nodes[i] = make_shared<GNode>(i + 1);
+}
+
+GTree::GTree(const GTree& right) {
+    size = right.size;
+    nodes = std::vector<std::shared_ptr<GNode>>(size);
+    G4bool* cpd = new G4bool[size];
+    for (G4int i = 0; i < size; i++)
+        cpd[i] = false;
+    for (G4int i = 0; i < size; i++) {
+        if (!cpd[i]) {
+            nodes[i] = make_shared<GNode>(*right.nodes[i]);
+            for (G4int j = 0; j < nodes[i]->size; j++) {
+                cpd[nodes[i]->V[j]] = true;
+                nodes[nodes[i]->V[j]] = nodes[i];
             }
-            // Merge two sets 
-            ds.merge(set_u, set_v);
         }
     }
-
-    return this->connectedComponents();
+    delete[] cpd;
 }
 
-void Graph::addConn(G4int v, G4int w)
-{
-    adj[v].push_back(w);
-    adj[w].push_back(v);
-}
-
-vector< vector <G4int> > Graph::connectedComponents()
-{
-	vector< vector <G4int> > clusters;
-    // Mark all the vertices as not visited 
-    G4bool* visited = new G4bool[V];
-    for (G4int v = 0; v < V; v++)
-        visited[v] = false;
-    for (G4int v = 0; v < V; v++)
-    {
-        if (visited[v] == false)
-        {
-        	// vector to fill with nucleon's numbers from one cluster
-        	vector < G4int > clust_inside; 
-            // print all reachable vertices from v 
-            DFSUtil(v, visited, &clust_inside);
-            // push cluster to vector of clusters
-            clusters.push_back(clust_inside); 
+GTree& GTree::operator=(const GTree& right) {
+    size = right.size;
+    nodes = std::vector<std::shared_ptr<GNode>>(size);
+    G4bool *cpd = new G4bool[size];
+    for (G4int i = 0; i < size; i++)
+        cpd[i] = false;
+    for (G4int i = 0; i < size; i++) {
+        if (!cpd[i]) {
+            nodes[i] = make_shared<GNode>(*right.nodes[i]);
+            for (G4int j = 0; j < nodes[i]->size; j++) {
+                cpd[nodes[i]->V[j]] = true;
+                nodes[nodes[i]->V[j]] = nodes[i];
+            }
         }
     }
-    delete[] visited;
-    return clusters;
+    delete[] cpd;
+    return *this;
 }
 
-void Graph::DFSUtil(G4int v, G4bool visited[], vector < G4int > *clust_inside)
-{
-    // Mark the current node as visited and print it 
-    visited[v] = true;
-    (*clust_inside).push_back(v); 
-
-    // Recur for all the vertices adjacent to this vertex
-    list<G4int>::iterator i;
-    for (i = adj[v].begin(); i != adj[v].end(); ++i)
-        if (!visited[*i])
-            DFSUtil(*i, visited, &(*clust_inside));
+void GTree::merge(G4int a, G4int b, G4double height) {
+    G4int t = nodes[a]->size + nodes[b]->size;
+    G4int* chngPtr = new G4int[t];
+    for (G4int i = 0; i < nodes[a]->size; i++)
+        chngPtr[i] = nodes[a]->V[i] - 1;
+    for (G4int i = 0; i < nodes[b]->size; i++)
+        chngPtr[i + nodes[a]->size] = nodes[b]->V[i] - 1;
+    nodes[a] = make_shared<GNode>(nodes[a], nodes[b], height);
+    for (G4int i = 0; i < t; i++)
+        nodes[chngPtr[i]] = nodes[a];
+    delete[] chngPtr;
 }
 
-DisjointSets::DisjointSets(G4int n)
-{
-    // Allocate memory 
-    this->n = n;
-    parent = new G4int[n + 1];
-    rnk = new G4int[n + 1];
-
-    // Initially, all vertices are in different sets and have rank 0.
-    for (G4int i = 0; i <= n; i++)
-    {
-        rnk[i] = 0;
-        //every element is parent of itself 
-        parent[i] = i;
+std::vector<GNode> GTree::get_cluster(G4double CD) {
+    if (size < 1)
+        return {};
+    std::vector<GNode> cluster;
+    queue<GNode*> width;
+    width.push(nodes[0].get());
+    while(!width.empty()) {
+        GNode* node = width.front();
+        width.pop();
+        if (node->height <= CD)
+            cluster.push_back(*node);
+        else if (node->children.first != nullptr) {
+            width.push(node->children.first.get());
+            width.push(node->children.second.get());
+        }
     }
-}
-
-DisjointSets::~DisjointSets()
-{
-	delete[] parent;
-	delete[] rnk;
-}
-
-G4int DisjointSets::find(G4int u)
-{
-    /* Make the parent of the nodes in the path
-       from u--> parent[u] point to parent[u] */
-    if (u != parent[u])
-        parent[u] = find(parent[u]);
-    return parent[u];
-}
-
-void DisjointSets::merge(G4int x, G4int y)
-{
-    x = find(x), y = find(y);
-
-    /* Make tree with smaller height
-       a subtree of the other tree  */
-    if (rnk[x] > rnk[y])
-        parent[y] = x;
-    else // If rnk[x] <= rnk[y] 
-        parent[x] = y;
-
-    if (rnk[x] == rnk[y])
-        rnk[y]++;
+    return cluster;
 }

@@ -337,8 +337,8 @@ int main()
 
             if(sourceA - A == 1 ) histoManager.GetHisto2(8)->Fill(FermiMomA_x,FermiMomA_y);
 
-
-            std::vector<G4FragmentVector> MstClustersVector = clusters->GetClusters(&nV, energy_A, energy_B, boostA, boostB); //d = const if energy is negative
+            clusters->SetUp(&nV, energy_A, energy_B, boostA, boostB);
+            std::vector<G4FragmentVector> MstClustersVector = clusters->GetClusters(GMSTClustering::cut()); //d = const if energy is negative
 
             d_MstA = clusters->GetCD("A");
             d_MstB = clusters->GetCD("B");
