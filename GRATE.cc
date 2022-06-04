@@ -217,7 +217,7 @@ int main()
 
     //START OF THE MODELLING
     //Setting up GMST
-    GMSTClustering* clusters = new GMSTClustering(histoManager.GetCriticalDistance(),sourceA,sourceAb);
+    GMSTClustering* clusters = new GMSTClustering(histoManager.GetCriticalDistance(), histoManager.GetVariation(), histoManager.GetSingleSilhouette());
     clusters->SetCD(histoManager.GetCriticalDistance());
 
     //Setting up ExcitationHandler
@@ -338,7 +338,15 @@ int main()
             if(sourceA - A == 1 ) histoManager.GetHisto2(8)->Fill(FermiMomA_x,FermiMomA_y);
 
             clusters->SetUp(&nV, energy_A, energy_B, boostA, boostB);
-            std::vector<G4FragmentVector> MstClustersVector = clusters->GetClusters(GMSTClustering::cut()); //d = const if energy is negative
+            std::vector<G4FragmentVector> MstClustersVector;
+            if (histoManager.GetClustModel() == "cut")
+                MstClustersVector = clusters->GetClusters(GMSTClustering::cut());
+            if (histoManager.GetClustModel() == "silhouette")
+                MstClustersVector = clusters->GetClusters(GMSTClustering::silhouette());
+            if (histoManager.GetClustModel() == "max_alpha")
+                MstClustersVector = clusters->GetClusters(GMSTClustering::max_alpha());
+            if (histoManager.GetClustModel() == "alpha_destroy")
+                MstClustersVector = clusters->GetClusters(GMSTClustering::alpha_destroy());
 
             d_MstA = clusters->GetCD("A");
             d_MstB = clusters->GetCD("B");

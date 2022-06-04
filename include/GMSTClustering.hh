@@ -115,7 +115,7 @@ class GMSTClustering{
 
 	public:
     GMSTClustering();
-    GMSTClustering(G4double CD_in, G4double SpecAa, G4double SpecAb, G4double single_silh = 0.0, G4double variation = 20.0);
+    GMSTClustering(G4double CD_in, G4double variation = 20.0, G4double single_silh = 0.0);
     ~GMSTClustering();
 
     void SetUp(NucleonVector* nucleons_in, G4double ExA, G4double ExB, CLHEP::Hep3Vector boostA, CLHEP::Hep3Vector boostB);
