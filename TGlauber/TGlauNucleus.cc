@@ -132,6 +132,7 @@ void TGlauNucleus::Lookup(const char* name)
   else if (TString(name) == "C")       {fN = 12;  fR = 2.608;      fA = 0.513;  fW = -0.051;   fF = 6;  fZ=6;} // read configurations from file  
   else if (TString(name) == "O")       {fN = 16;  fR = 2.608;      fA = 0.513;  fW = -0.051;   fF = 6;  fZ=8;} // read configurations from file
   else if (TString(name) == "O2")    {fN = 16;  fR = 2.608;      fA = 0.513;  fW = -0.051;   fF = 6;  fZ=8;} // read configurations from file
+  else if (TString(name) == "Oth")    {fN = 16;  fR = 2.608;      fA = 0.513;  fW = -0.051;   fF = 6;  fZ=8;} // read configurations from file
   else if (TString(name) == "Opar")    {fN = 16;  fR = 2.608;      fA = 0.513;  fW = -0.051;   fF = 1;  fZ=8;} // WS parameterization
   else if (TString(name) == "Oho")     {fN = 16;  fR = 1.833;      fA = 1.544;  fW =  0;       fF = 15; fZ=8;} // Harmonic oscillator parameterization
   else if (TString(name) == "Al")      {fN = 27;  fR = 3.34;       fA = 0.580;  fW = 0.0;      fF = 8;  fZ=13; fBeta2=-0.448; fBeta4=0.239;}
@@ -399,7 +400,8 @@ TVector3 &TGlauNucleus::ThrowNucleons(Double_t xshift)
   Bool_t nucleonsfromfile = false;
   if ((tmpname=="He3") || (tmpname=="H3") ||
       (tmpname=="He4") || (tmpname=="C")   || 
-      (tmpname=="O") || (tmpname=="O2") || (tmpname=="Ca2")){nucleonsfromfile = true;}
+      (tmpname=="O") || (tmpname=="O2") ||
+      (tmpname=="Ca2") || (tmpname=="Oth")){nucleonsfromfile = true;}
   
   if (fN==1) { //special treatment for proton
     Double_t r = fFunc1->GetRandom();
@@ -469,7 +471,10 @@ TVector3 &TGlauNucleus::ThrowNucleons(Double_t xshift)
       } else if (tmpname=="O2") {
         filepath += "o16_alv.dat";
         //sprintf(filename,"../TGlauber/o16_alv.dat");
-      } else if (tmpname=="Ca2") {
+      } else if (tmpname=="Oth") {
+          filepath += "oxygen_files/oxygen_tetrahedral_mixed_5_gauss.dat";
+          //sprintf(filename,"../TGlauber/o16_alv.dat");
+      }else if (tmpname=="Ca2") {
         filepath += "ca40_alv.dat";
         //sprintf(filename,"../TGlauber/ca40_alv.dat");
       }
@@ -486,6 +491,7 @@ TVector3 &TGlauNucleus::ThrowNucleons(Double_t xshift)
       while (myfile) {
         //if (inputcounter > 5999) break;
           if (fNucCounter > 9999 && (tmpname=="O2" || tmpname=="Ca2") ) {break;}
+          else if(fNucCounter > 4999 && tmpname=="Oth") {break;}
           else if(fNucCounter > 5999) {break;}
         Double_t foo;
   if (fN == 3) {
@@ -553,6 +559,25 @@ TVector3 &TGlauNucleus::ThrowNucleons(Double_t xshift)
       myfile >> fNucArrAlv[inputcounter][14][0] >> fNucArrAlv[inputcounter][14][1] >> fNucArrAlv[inputcounter][14][2] >> fNucArrAlv[inputcounter][14][3];
       myfile >> fNucArrAlv[inputcounter][15][0] >> fNucArrAlv[inputcounter][15][1] >> fNucArrAlv[inputcounter][15][2] >> fNucArrAlv[inputcounter][15][3];
   }
+  else if (fN == 16 && tmpname=="Oth") {
+      // read from file by M. Alvioli et al. Phys. Lett. B680 (2009) 225
+      myfile >> fNucArrAlv[inputcounter][0][0] >> fNucArrAlv[inputcounter][0][1] >> fNucArrAlv[inputcounter][0][2] >> fNucArrAlv[inputcounter][0][3];
+      myfile >> fNucArrAlv[inputcounter][1][0] >> fNucArrAlv[inputcounter][1][1] >> fNucArrAlv[inputcounter][1][2] >> fNucArrAlv[inputcounter][1][3];
+      myfile >> fNucArrAlv[inputcounter][2][0] >> fNucArrAlv[inputcounter][2][1] >> fNucArrAlv[inputcounter][2][2] >> fNucArrAlv[inputcounter][2][3];
+      myfile >> fNucArrAlv[inputcounter][3][0] >> fNucArrAlv[inputcounter][3][1] >> fNucArrAlv[inputcounter][3][2] >> fNucArrAlv[inputcounter][3][3];
+      myfile >> fNucArrAlv[inputcounter][4][0] >> fNucArrAlv[inputcounter][4][1] >> fNucArrAlv[inputcounter][4][2] >> fNucArrAlv[inputcounter][4][3];
+      myfile >> fNucArrAlv[inputcounter][5][0] >> fNucArrAlv[inputcounter][5][1] >> fNucArrAlv[inputcounter][5][2] >> fNucArrAlv[inputcounter][5][3];
+      myfile >> fNucArrAlv[inputcounter][6][0] >> fNucArrAlv[inputcounter][6][1] >> fNucArrAlv[inputcounter][6][2] >> fNucArrAlv[inputcounter][6][3];
+      myfile >> fNucArrAlv[inputcounter][7][0] >> fNucArrAlv[inputcounter][7][1] >> fNucArrAlv[inputcounter][7][2] >> fNucArrAlv[inputcounter][7][3];
+      myfile >> fNucArrAlv[inputcounter][8][0] >> fNucArrAlv[inputcounter][8][1] >> fNucArrAlv[inputcounter][8][2] >> fNucArrAlv[inputcounter][8][3];
+      myfile >> fNucArrAlv[inputcounter][9][0] >> fNucArrAlv[inputcounter][9][1] >> fNucArrAlv[inputcounter][9][2] >> fNucArrAlv[inputcounter][9][3];
+      myfile >> fNucArrAlv[inputcounter][10][0] >> fNucArrAlv[inputcounter][10][1] >> fNucArrAlv[inputcounter][10][2] >> fNucArrAlv[inputcounter][10][3];
+      myfile >> fNucArrAlv[inputcounter][11][0] >> fNucArrAlv[inputcounter][11][1] >> fNucArrAlv[inputcounter][11][2] >> fNucArrAlv[inputcounter][11][3];
+      myfile >> fNucArrAlv[inputcounter][12][0] >> fNucArrAlv[inputcounter][12][1] >> fNucArrAlv[inputcounter][12][2] >> fNucArrAlv[inputcounter][12][3];
+      myfile >> fNucArrAlv[inputcounter][13][0] >> fNucArrAlv[inputcounter][13][1] >> fNucArrAlv[inputcounter][13][2] >> fNucArrAlv[inputcounter][13][3];
+      myfile >> fNucArrAlv[inputcounter][14][0] >> fNucArrAlv[inputcounter][14][1] >> fNucArrAlv[inputcounter][14][2] >> fNucArrAlv[inputcounter][14][3];
+      myfile >> fNucArrAlv[inputcounter][15][0] >> fNucArrAlv[inputcounter][15][1] >> fNucArrAlv[inputcounter][15][2] >> fNucArrAlv[inputcounter][15][3];
+  }
   else if (fN == 40 && tmpname=="Ca2") {
       // read from file by M. Alvioli et al. Phys. Lett. B680 (2009) 225
     for(int nn = 0; nn < 40; nn++){myfile >> fNucArrAlv[inputcounter][nn][0] >> fNucArrAlv[inputcounter][nn][1] >> fNucArrAlv[inputcounter][nn][2] >> fNucArrAlv[inputcounter][nn][3];}
@@ -565,13 +590,14 @@ TVector3 &TGlauNucleus::ThrowNucleons(Double_t xshift)
     } // done reading in the file the first time
 
     if (fNucCounter > 9999 && (tmpname=="O2" || tmpname=="Ca2")) {fNucCounter = 0;}
+    else if(fNucCounter > 4999 && (tmpname == "Oth")) {fNucCounter = 0;}
     else if(fNucCounter > 5999) {fNucCounter = 0;}
 
     // change to loop over fN nucleons!
     for (Int_t i = 0; i<fN; ++i) {
       TGlauNucleon *nucleon=(TGlauNucleon*)(fNucleons->At(i));
       nucleon->Reset();
-      if ((tmpname=="O2" )||(tmpname=="Ca2" )){
+      if ((tmpname=="O2" )||(tmpname=="Ca2" )||(tmpname=="Oth")){
       nucleon->SetXYZ(fNucArrAlv[fNucCounter][i][0],
           fNucArrAlv[fNucCounter][i][1],
           fNucArrAlv[fNucCounter][i][2]);

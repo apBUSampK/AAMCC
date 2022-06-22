@@ -109,13 +109,13 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(silhouette) {
     //get the clustering with the biggest applicable CD:
     std::vector<GNode> current = treeA.get_cluster(CritDistA * (1.0 + variation));
     std::sort(current.begin(), current.end(), cd_comp);
-    G4double max_silh = -1;
+    G4double max_silh = -1, min_dist = kInfinity;
     std::vector<GNode> best = current;
     //calculate mean cluster silhouettes until min applicable CD
     //separate nucleon clusters are given silhouette of single_silh
     if (!current.empty())
         while (current.front().height > CritDistA * (1.0 - (variation > 1 ? 1 : variation))) {
-            G4double silh = 0;
+            G4double silh = 0, dist = abs(current.front().height - CritDistA);
             for (auto iter = current.cbegin(); iter != current.cend(); iter++) {
                 if (iter->size > 1)
                     for (G4int i = 0; i < iter->size; i++) {
@@ -138,9 +138,10 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(silhouette) {
                     silh += single_silh;
             }
             silh /= SpecAa;
-            if (silh > max_silh) {
+            if (silh > max_silh || (silh == max_silh && dist < min_dist)) {
                 max_silh = silh;
                 best = current;
+                min_dist = dist;
             }
             //divide the biggest cluster into two
             current.push_back(*current.front().children.first);
@@ -157,13 +158,13 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(silhouette) {
     //get the clustering with the biggest applicable CD:
     current = treeB.get_cluster(CritDist * (1.0 + variation));
     std::sort(current.begin(), current.end(), cd_comp);
-    max_silh = -1;
+    max_silh = -1, min_dist = kInfinity;
     best = current;
     //calculate mean cluster silhouettes until min applicable CD
     //separate nucleon clusters are given silhouette of single_silh
     if (!current.empty())
         while (current.front().height > CritDist * (1.0 - (variation > 1 ? 1 : variation))) {
-            G4double silh = 0;
+            G4double silh = 0, dist = abs(current.front().height - CritDist);
             for (auto iter = current.cbegin(); iter != current.cend(); iter++) {
                 if (iter->size > 1)
                     for (G4int i = 0; i < iter->size; i++) {
@@ -186,9 +187,10 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(silhouette) {
                     silh += single_silh;
             }
             silh /= SpecAb;
-            if (silh > max_silh) {
+            if (silh > max_silh || (silh == max_silh && dist < min_dist)) {
                 max_silh = silh;
                 best = current;
+                min_dist = dist;
             }
             //divide the biggest cluster into two
             current.push_back(*current.front().children.first);
@@ -215,11 +217,13 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(max_alpha) {
     std::vector<GNode> current = treeA.get_cluster(CritDistA * (1.0 + variation));
     std::sort(current.begin(), current.end(), cd_comp);
     G4int max_alpha = 0;
+    G4double min_dist = kInfinity;
     std::vector<GNode> best = current;
     //find the cluster with the largest alpha particles count
     if (!current.empty())
         while (current.front().height > CritDistA * (1.0 - (variation > 1 ? 1 : variation))) {
             G4int alpha = 0;
+            G4double dist = abs(current.front().height - CritDistA);
             for (auto & iter : current) {
                 G4int z_count = 0;
                 for (G4int i = 0; i < iter.size; i++)
@@ -228,9 +232,10 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(max_alpha) {
                 if (z_count == 2 && iter.size == 4)
                     alpha++;
             }
-            if (alpha > max_alpha) {
+            if (alpha > max_alpha || (alpha == max_alpha && dist < min_dist)) {
                 max_alpha = alpha;
                 best = current;
+                min_dist = dist;
             }
             //divide the biggest cluster into two
             current.push_back(*current.front().children.first);
@@ -248,11 +253,13 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(max_alpha) {
     current = treeB.get_cluster(CritDist * (1.0 + variation));
     std::sort(current.begin(), current.end(), cd_comp);
     max_alpha = 0;
+    min_dist = kInfinity;
     best = current;
     //find the cluster with the largest alpha particles count
     if (!current.empty())
         while (current.front().height > CritDist * (1.0 - (variation > 1 ? 1 : variation))) {
             G4int alpha = 0;
+            G4double dist = abs(current.front().height - CritDist);
             for (auto & iter : current) {
                 G4int z_count = 0;
                 for (G4int i = 0; i < iter.size; i++)
@@ -261,9 +268,10 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(max_alpha) {
                 if (z_count == 2 && iter.size == 4)
                     alpha++;
             }
-            if (alpha > max_alpha) {
+            if (alpha > max_alpha || (alpha == max_alpha && dist < min_dist)) {
                 max_alpha = alpha;
                 best = current;
+                min_dist = dist;
             }
             //divide the biggest cluster into two
             current.push_back(*current.front().children.first);
@@ -290,12 +298,14 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(alpha_destroy) {
     std::vector<GNode> current = treeA.get_cluster(CritDistA * (1.0 + variation));
     std::sort(current.begin(), current.end(), cd_comp);
     G4int max_alpha = 0;
+    vector<G4double> min_dist(5, kInfinity);
     std::vector<std::vector<GNode>> all(5, std::vector<GNode>());
 
     //find the cluster with the largest alpha particles count
     if (!current.empty())
         while (current.front().height > CritDistA * (1.0 - (variation > 1 ? 1 : variation))) {
             G4int alpha = 0;
+            G4double dist = abs(current.front().height - CritDistA);
             for (auto & iter : current) {
                 G4int z_count = 0;
                 for (G4int i = 0; i < iter.size; i++)
@@ -306,8 +316,10 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(alpha_destroy) {
             }
             if (alpha > max_alpha)
                 max_alpha = alpha;
-            if (all[alpha].empty())
+            if (all[alpha].empty() || dist < min_dist[alpha]) {
                 all[alpha] = current;
+                min_dist[alpha] = dist;
+            }
             //divide the biggest cluster into two
             current.push_back(*current.front().children.first);
             current.push_back(*current.front().children.second);
@@ -333,12 +345,14 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(alpha_destroy) {
     current = treeB.get_cluster(CritDist * (1.0 + variation));
     std::sort(current.begin(), current.end(), cd_comp);
     max_alpha = 0;
-    all = std::vector<std::vector<GNode>>(5, std::vector<GNode>());
+    min_dist.assign(5, kInfinity);
+    all.assign(5, std::vector<GNode>());
 
     //find the cluster with the largest alpha particles count
     if (!current.empty())
         while (current.front().height > CritDist * (1.0 - (variation > 1 ? 1 : variation))) {
             G4int alpha = 0;
+            G4double dist = abs(current.front().height - CritDist);
             for (auto & iter : current) {
                 G4int z_count = 0;
                 for (G4int i = 0; i < iter.size; i++)
@@ -349,8 +363,10 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(alpha_destroy) {
             }
             if (alpha > max_alpha)
                 max_alpha = alpha;
-            if (all[alpha].empty())
+            if (all[alpha].empty() || dist < min_dist[alpha]) {
                 all[alpha] = current;
+                min_dist[alpha] = dist;
+            }
             //divide the biggest cluster into two
             current.push_back(*current.front().children.first);
             current.push_back(*current.front().children.second);
