@@ -170,13 +170,13 @@ std::vector<G4FragmentVector> GMSTClustering::GetClusters(silhouette) {
                     for (G4int i = 0; i < iter->size; i++) {
                         G4double inner = 0, outer = -1;
                         for (G4int j = 0; j < iter->size; j++)
-                            inner += g.adj[iter->V[i] - 1][iter->V[j] - 1];
+                            inner += g_B.adj[iter->V[i] - 1][iter->V[j] - 1];
                         inner /= (iter->size - 1);
                         for (auto jter = current.cbegin(); jter != current.cend(); jter++)
                             if (iter != jter) {
                                 G4double buff = 0;
                                 for (G4int j = 0; j < jter->size; j++)
-                                    buff += g.adj[iter->V[i] - 1][jter->V[j] - 1];
+                                    buff += g_B.adj[iter->V[i] - 1][jter->V[j] - 1];
                                 buff /= jter->size;
                                 if (outer < 0 || buff < outer)
                                     outer = buff;
